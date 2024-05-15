@@ -1,0 +1,7 @@
+requests
+pywikipathways
+streamlit
+openai
+reactome2py
+pandas
+watchdog
