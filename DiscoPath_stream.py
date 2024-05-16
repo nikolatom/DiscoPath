@@ -85,14 +85,14 @@ def remove_lines(pathway_info):
     filtered_data = '\n'.join(line for line in pathway_info.split('\n') if not pattern.match(line.strip()))
     return filtered_data
 
-def lipid_narrative_analysis(gene_symbol, pathway, model, temperature):
+def lipid_narrative_analysis(gene_symbol, pathway, model):
     """Generate narrative analysis using OpenAI GPT model."""
     messages = [
         {"role": "system", "content": "You are a helpful assistant, a professional in biological pathway analysis. Make sure that all the pathways or interest are included and formatted identically."},
         {"role": "user", "content": f"Provide detailed analysis for the gene symbol '{gene_symbol}' based on '{pathway}' that includes its associated pathways, diseases, and any relevant publications with PMIDs. Highlight the significance of these pathways in human biology and disease, and mention any notable findings from the publications."}
     ]
     try:
-        response = client.chat_completions.create(model=model, messages=messages, stream=True, temperature=temperature)
+        response = client.chat.completions.create(model=model, messages=messages, stream=True, temperature=0)
         narrative_summary = ""
         for chunk in response:
             if chunk.choices[0].delta.content is not None:
@@ -102,14 +102,14 @@ def lipid_narrative_analysis(gene_symbol, pathway, model, temperature):
         st.error(f"An error occurred during gene narrative analysis: {e}")
         return None
 
-def detailed_lipid_pathways_table(gene_symbol, narrative_analysis_results, model, temperature):
+def detailed_lipid_pathways_table(gene_symbol, narrative_analysis_results, model):
     """Generate a detailed table of pathways using OpenAI GPT model."""
     messages = [
         {"role": "system", "content": "You are a helpful assistant, a professional in biological pathway analysis providing a consistent output format. Make sure that all the pathways or interest are included and formatted identically."},
         {"role": "user", "content": f"Based on the pathways information provided for '{gene_symbol}', create a table describing the pathways in details. Include the pathway name, ID, and its role in human biology and disease, and publications with PMID:\n{narrative_analysis_results}. Provide .txt output format"}
     ]
     try:
-        response = client.chat_completions.create(model=model, messages=messages, stream=True, temperature=temperature)
+        response = client.chat.completions.create(model=model, messages=messages, stream=True, temperature=0)
         table_summary = ""
         for chunk in response:
             if chunk.choices[0].delta.content is not None:
@@ -134,7 +134,7 @@ def save_relevant_pathways_to_file(file_path, relevant_pathways):
             for pathway in relevant_pathways:
                 file.write(f"{pathway['Gene Symbol']},{pathway['Pathway Name']},{pathway['Pathway ID']}\n")
 
-def check_pathways_relevance(lipid_symbol, pathways, query, model, temperature):
+def check_pathways_relevance(lipid_symbol, pathways, query, model):
     """Check if each pathway in the list is relevant to the specified query using AI and return details including the gene symbol in a DataFrame."""
     relevant_pathways = []
     for pathway in pathways:
@@ -143,7 +143,7 @@ def check_pathways_relevance(lipid_symbol, pathways, query, model, temperature):
             {"role": "user", "content": f"Is the pathway '{pathway['name']}' {query}?"}
         ]
         try:
-            response = client.chat_completions.create(model=model, messages=messages, temperature=temperature, max_tokens=50)
+            response = client.chat.completions.create(model=model, messages=messages, max_tokens=500, temperature=0)
             if response.choices and response.choices[0].message.content:
                 answer = response.choices[0].message.content.strip().lower()
                 if "yes" in answer or "true" in answer:
@@ -154,7 +154,7 @@ def check_pathways_relevance(lipid_symbol, pathways, query, model, temperature):
             st.error(f"An error occurred during AI query processing for pathway {pathway['name']}: {e}")
     return pd.DataFrame(relevant_pathways)
 
-def process_gene(gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model, temperature):
+def process_gene(gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model):
     """Process a single gene symbol."""
     xml_data = find_pathways_by_text(gene_symbol)
     pathway_id_names = parse_pathways(xml_data)
@@ -165,7 +165,7 @@ def process_gene(gene_symbol, output_dir, query, pathways_filtering, detailed_an
     relevant_pathways_file = os.path.join(output_dir, "relevant_pathways_list.txt")
 
     if pathways_filtering:
-        relevant_pathways_df = check_pathways_relevance(gene_symbol, pathway_id_names, query, model, temperature)
+        relevant_pathways_df = check_pathways_relevance(gene_symbol, pathway_id_names, query, model)
         if relevant_pathways_df.empty:
             st.error(f"No relevant pathways found for gene: {gene_symbol}")
             return
@@ -186,10 +186,10 @@ def process_gene(gene_symbol, output_dir, query, pathways_filtering, detailed_an
         narrative_analysis_results = {}
         for pathway_id, pathway_info in all_pathway_details.items():
             if pathway_info:
-                narrative_analysis = lipid_narrative_analysis(gene_symbol, pathway_info, model, temperature)
+                narrative_analysis = lipid_narrative_analysis(gene_symbol, pathway_info, model)
                 narrative_analysis_results[pathway_id] = narrative_analysis
 
-        detailed_pathways_table = detailed_lipid_pathways_table(gene_symbol, narrative_analysis_results, model, temperature)
+        detailed_pathways_table = detailed_lipid_pathways_table(gene_symbol, narrative_analysis_results, model)
         if detailed_pathways_table:
             save_results_to_file(output_file, gene_symbol, detailed_pathways_table)
         else:
@@ -218,8 +218,6 @@ def main():
     detailed_annotations = st.checkbox("Enable Detailed Pathway Annotations", value=False)
 
     model = st.selectbox("Select GPT Model", ["gpt-4o", "gpt-3.5-turbo", "gpt-4"], index=0)
-    
-    temperature = st.slider("Select GPT Temperature", 0.0, 1.0, 0.5)
 
     if gene_file_path:
         output_dir = create_output_dir()
@@ -232,7 +230,7 @@ def main():
             gene_df = import_text_file_to_dataframe(gene_file_path)
             if gene_df is not None:
                 with ThreadPoolExecutor(max_workers=10) as executor:
-                    futures = {executor.submit(process_gene, gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model, temperature): gene_symbol for gene_symbol in gene_df['Gene']}
+                    futures = {executor.submit(process_gene, gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model): gene_symbol for gene_symbol in gene_df['Gene']}
                     for future in as_completed(futures):
                         gene_symbol = futures[future]
                         try:
