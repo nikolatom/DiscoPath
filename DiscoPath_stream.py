@@ -41,6 +41,19 @@ def import_text_file_to_dataframe(uploaded_file):
             errors.append(f"An error occurred while reading the file: {e}")
         return None
 
+def import_csv_file_to_dataframe(uploaded_file):
+    """Reads a CSV file from an uploaded file object and returns its contents as a pandas DataFrame."""
+    try:
+        content = uploaded_file.read().decode("utf-8")
+        lines = [line.strip() for line in content.split('\n') if line.strip()]
+        data_frame = pd.DataFrame(lines, columns=['Gene'])
+        return data_frame
+    except Exception as e:
+        with error_lock:
+            errors.append(f"An error occurred while reading the file: {e}")
+        return None
+
+
 def find_pathways_by_text(gene_symbol):
     """Retrieve pathways associated with a gene symbol from WikiPathways."""
     url = f"https://webservice.wikipathways.org/findPathwaysByText?query={gene_symbol}&species=Homo sapiens&format=xml"
@@ -269,7 +282,7 @@ def zip_output_dir(output_dir, zip_filename):
 def main():
     st.title("DiscoPath - connect features to WikiPathways by AI")
 
-    gene_file_path = st.file_uploader("Upload Gene File", type="txt")
+    gene_file_path = st.file_uploader("Upload Gene File", type=["txt", "csv"])
 
     pathways_filtering = st.checkbox("Enable Pathway Filtering", value=True)
     query = ""
@@ -290,10 +303,14 @@ def main():
             analysis_placeholder = st.empty()  # Placeholder for analysis running message
             analysis_placeholder.text("Analysis running...")
 
-            gene_df = import_text_file_to_dataframe(gene_file_path)
+            if gene_file_path.name.endswith(".txt"):
+                gene_df = import_text_file_to_dataframe(gene_file_path)
+            elif gene_file_path.name.endswith(".csv"):
+                gene_df = import_csv_file_to_dataframe(gene_file_path)
+
             if gene_df is not None:
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    futures = {executor.submit(process_gene, gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model, log_file): gene_symbol for gene_symbol in gene_df['Gene']}
+                with ThreadPoolExecutor(max_workers=50) as executor:
+                    futures = {executor.submit(process_gene, gene_symbol, output_dir, query, pathways_filtering, detailed_annotations, model, log_file): gene_symbol for gene_symbol in gene_df.iloc[:, 0]}
                     for future in as_completed(futures):
                         gene_symbol = futures[future]
                         try:
